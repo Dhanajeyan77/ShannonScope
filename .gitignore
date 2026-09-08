@@ -1,0 +1,5 @@
+tests/mnt_loop_fixture/
+tests/test_drive.raw
+node_modules/
+target/
+.env
