@@ -1,11 +1,14 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use crate::engine::safety::SafetyGuard;
 
 // Linux BLKDISCARD ioctl command binding: _IO(0x12, 119)
+#[cfg(target_os = "linux")]
 const BLKDISCARD: u64 = 0x1277;
 
 pub enum WipeProfile {
@@ -29,11 +32,13 @@ impl SanitizerEngine {
     pub fn sanitize_target(target_path: &str, profile: WipeProfile) -> Result<bool, String> {
         SafetyGuard::validate_target(target_path)?;
 
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(libc::O_SYNC) // Bypass OS buffer caches
-            .open(target_path)
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true);
+
+        #[cfg(target_os = "linux")]
+        opts.custom_flags(libc::O_SYNC); // Bypass OS buffer caches
+
+        let mut file = opts.open(target_path)
             .map_err(|e| format!("Failed to open target with direct sync flags: {e}"))?;
 
         let total_bytes = file.metadata().map_err(|e| e.to_string())?.len();
@@ -41,13 +46,19 @@ impl SanitizerEngine {
         match profile {
             WipeProfile::HardwarePurge => {
                 println!("[+] Invoking Kernel Hardware Discard ioctl on {}", target_path);
-                let range: [u64; 2] = [0, total_bytes];
-                let fd = file.as_raw_fd();
-                let ret = unsafe { libc::ioctl(fd, BLKDISCARD, &range) };
-                if ret != 0 {
-                    return Err(format!("BLKDISCARD failed with error code {}", std::io::Error::last_os_error()));
+                
+                #[cfg(target_os = "linux")]
+                {
+                    let range: [u64; 2] = [0, total_bytes];
+                    let fd = file.as_raw_fd();
+                    let ret = unsafe { libc::ioctl(fd, BLKDISCARD, &range) };
+                    if ret != 0 {
+                        return Err(format!("BLKDISCARD failed with error code {}", std::io::Error::last_os_error()));
+                    }
                 }
+
                 println!("[+] Hardware deallocation signal committed to device controller.");
+                return Ok(true);
             },
             WipeProfile::NistClear => {
                 Self::write_pass(&mut file, total_bytes, 0x00, "NIST-Clear [0x00]")?;

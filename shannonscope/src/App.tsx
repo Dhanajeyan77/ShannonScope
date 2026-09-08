@@ -34,6 +34,7 @@ type DriveInfo = {
 
 function App() {
   const [target, setTarget] = useState("tests/test_drive.raw");
+  const [availableDrives, setAvailableDrives] = useState<string[]>([]);
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [fileTarget, setFileTarget] = useState("");
   const [artifacts, setArtifacts] = useState<CarvedArtifact[]>([]);
@@ -42,6 +43,15 @@ function App() {
   const [wipeProfile, setWipeProfile] = useState("dod_3pass");
   const [statusMsg, setStatusMsg] = useState("");
   const [hexViewData, setHexViewData] = useState<string | null>(null);
+
+  const fetchDrives = async () => {
+    try {
+      const drives = await invoke<string[]>("run_list_drives");
+      setAvailableDrives(drives);
+    } catch (e) {
+      console.error("Failed to load drives", e);
+    }
+  };
 
   const loadAuditTrail = async () => {
     try {
@@ -52,19 +62,25 @@ function App() {
     }
   };
 
-  const probeDrive = async () => {
+  const probeDrive = async (overrideTarget?: string) => {
+    const probeTarget = overrideTarget || target;
+    // Strip the GB label if present from sysinfo
+    const cleanTarget = probeTarget.split(" (")[0];
+    setTarget(cleanTarget);
+    
     try {
-      const info = await invoke<DriveInfo>("run_get_drive_info", { target });
+      const info = await invoke<DriveInfo>("run_get_drive_info", { target: cleanTarget });
       setDriveInfo(info);
       setStatusMsg(`Target Probed: Serial ${info.serial_number}`);
     } catch (e) {
       setDriveInfo(null);
-      setStatusMsg(`Probe failed or unavailable for this path.`);
+      setStatusMsg(`Probe unavailable for ${cleanTarget}. Ensure Administrator/root access.`);
     }
   };
 
   useEffect(() => {
     loadAuditTrail();
+    fetchDrives();
   }, []);
 
   const handleRecover = async () => {
@@ -159,23 +175,36 @@ function App() {
         {/* Controls Panel */}
         <div className="md:col-span-5 bg-[#161b22] p-6 rounded-lg border border-gray-800 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
-          <h2 className="text-sm uppercase tracking-widest text-cyan-500 font-bold mb-4">Hardware Target</h2>
+          
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-sm uppercase tracking-widest text-cyan-500 font-bold">Hardware Target</h2>
+            <button onClick={fetchDrives} className="text-[9px] uppercase border border-gray-700 bg-gray-800 px-2 py-0.5 rounded text-gray-400 hover:text-white">Refresh Drives</button>
+          </div>
           
           <div className="mb-4">
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className="flex-1 bg-[#0d1117] border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
-                placeholder="/dev/sdc or test_drive.raw"
-              />
-              <button 
-                onClick={probeDrive}
-                className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded text-xs uppercase transition-colors"
+            <div className="flex flex-col gap-2 mb-2">
+              <select 
+                onChange={(e) => probeDrive(e.target.value)}
+                className="w-full bg-[#0d1117] border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-cyan-500 outline-none"
               >
-                Probe
-              </button>
+                <option value="" disabled selected>-- Select an attached drive --</option>
+                {availableDrives.map((d, i) => <option key={i} value={d}>{d}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  className="flex-1 bg-[#0d1117] border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                  placeholder="Or manually type path (e.g. \\.\PhysicalDrive1)"
+                />
+                <button 
+                  onClick={() => probeDrive()}
+                  className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded text-xs uppercase transition-colors"
+                >
+                  Probe
+                </button>
+              </div>
             </div>
             {driveInfo && (
               <div className="mt-2 text-xs bg-[#0d1117] p-2 rounded border border-gray-800 grid grid-cols-2 gap-2 text-gray-400">

@@ -144,6 +144,45 @@ fn run_export_report(artifacts: Vec<CarvedArtifact>, out_path: String) -> Result
     Ok(())
 }
 
+#[tauri::command]
+fn run_list_drives() -> Vec<String> {
+    use sysinfo::Disks;
+    let mut drives = Vec::new();
+    
+    // Add logical partitions using sysinfo
+    let disks = Disks::new_with_refreshed_list();
+    for disk in disks.list() {
+        if let Some(path) = disk.mount_point().to_str() {
+            // For windows it's "C:\", for Linux it's "/mnt/..."
+            let name = format!("{} ({} GB)", path, disk.total_space() / 1_000_000_000);
+            drives.push(name);
+        }
+    }
+
+    // Add physical raw paths manually for forensic carving
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/sys/block/") {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("sd") || name.starts_with("nvme") {
+                    drives.push(format!("/dev/{}", name));
+                }
+            }
+        }
+        drives.push("tests/test_drive.raw".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        drives.push(r"\\.\PhysicalDrive0".to_string());
+        drives.push(r"\\.\PhysicalDrive1".to_string());
+        drives.push(r"\\.\PhysicalDrive2".to_string());
+    }
+
+    drives
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -153,7 +192,8 @@ fn main() {
             get_audit_trail,
             run_get_drive_info,
             run_hex_view,
-            run_export_report
+            run_export_report,
+            run_list_drives
         ])
         .run(tauri::generate_context!())
         .expect("Error initializing Tauri execution runtime");
