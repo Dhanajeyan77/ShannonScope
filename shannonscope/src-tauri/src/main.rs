@@ -157,24 +157,11 @@ pub struct DriveEnumInfo {
 fn enumerate_drives() -> Vec<DriveEnumInfo> {
     let mut drives = Vec::new();
     
-    // Add logical partitions using sysinfo to detect system drive easily
+    // We use sysinfo ONLY to detect the system drive, not to populate the dropdown
+    // because our Carver and Wiper require raw physical block devices (e.g. /dev/sda),
+    // not mount point directories (e.g. /media/user/USB).
     use sysinfo::Disks;
     let disks = Disks::new_with_refreshed_list();
-    for disk in disks.list() {
-        if let Some(path) = disk.mount_point().to_str() {
-            let is_sys = path == "/" || path == "C:\\";
-            let size = disk.total_space() as f64 / 1_000_000_000.0;
-            let tag = if disk.is_removable() { "Removable" } else { "Internal" };
-            
-            drives.push(DriveEnumInfo {
-                path: path.to_string(),
-                size_gb: size,
-                is_removable: disk.is_removable(),
-                is_system_drive: is_sys,
-                label: format!("{} - {:.1}GB ({})", path, size, tag),
-            });
-        }
-    }
 
     // Add physical raw paths manually for bare-metal forensic carving
     #[cfg(target_os = "linux")]
