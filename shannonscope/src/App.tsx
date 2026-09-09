@@ -287,7 +287,7 @@ function App() {
               disabled={isProcessing}
               className="col-span-2 bg-gradient-to-r from-cyan-900 to-blue-900 hover:from-cyan-800 hover:to-blue-800 border border-cyan-800 disabled:opacity-50 text-cyan-100 py-2 rounded text-sm uppercase tracking-widest font-bold transition-all"
             >
-              Execute Carver (4MB Sliding)
+              Execute Carver (64MB Sliding)
             </button>
             <button 
               onClick={handleClone}

@@ -3,9 +3,11 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use sha2::{Digest, Sha256};
 use serde::{Serialize, Deserialize};
 use crate::engine::safety::SafetyGuard;
+use regex;
 
-pub const CHUNK_SIZE: usize = 4 * 1024 * 1024; // 4 MB Window
-pub const OVERLAP_SIZE: usize = 64 * 1024;      // 64 KB Boundary Guard
+// Increased from 4MB to 64MB to massively accelerate real-time hardware reading speeds
+pub const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB
+pub const OVERLAP_SIZE: usize = 2 * 1024 * 1024; // 2MB overlap to catch fragmented boundaries Boundary Guard
 
 use crate::engine::types::CarvedArtifact;
 
