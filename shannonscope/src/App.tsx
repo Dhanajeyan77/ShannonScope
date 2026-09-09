@@ -32,9 +32,17 @@ type DriveInfo = {
   is_rotational: boolean;
 };
 
+type DriveEnumInfo = {
+  path: string;
+  size_gb: number;
+  is_removable: boolean;
+  is_system_drive: boolean;
+  label: string;
+};
+
 function App() {
-  const [target, setTarget] = useState("tests/test_drive.raw");
-  const [availableDrives, setAvailableDrives] = useState<string[]>([]);
+  const [target, setTarget] = useState("");
+  const [availableDrives, setAvailableDrives] = useState<DriveEnumInfo[]>([]);
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [fileTarget, setFileTarget] = useState("");
   const [artifacts, setArtifacts] = useState<CarvedArtifact[]>([]);
@@ -46,8 +54,11 @@ function App() {
 
   const fetchDrives = async () => {
     try {
-      const drives = await invoke<string[]>("run_list_drives");
+      const drives = await invoke<DriveEnumInfo[]>("enumerate_drives");
       setAvailableDrives(drives);
+      if (drives.length > 0 && !target) {
+        setTarget(drives[0].path);
+      }
     } catch (e) {
       console.error("Failed to load drives", e);
     }
@@ -64,17 +75,15 @@ function App() {
 
   const probeDrive = async (overrideTarget?: string) => {
     const probeTarget = overrideTarget || target;
-    // Strip the GB label if present from sysinfo
-    const cleanTarget = probeTarget.split(" (")[0];
-    setTarget(cleanTarget);
+    setTarget(probeTarget);
     
     try {
-      const info = await invoke<DriveInfo>("run_get_drive_info", { target: cleanTarget });
+      const info = await invoke<DriveInfo>("run_get_drive_info", { target: probeTarget });
       setDriveInfo(info);
       setStatusMsg(`Target Probed: Serial ${info.serial_number}`);
     } catch (e) {
       setDriveInfo(null);
-      setStatusMsg(`Probe unavailable for ${cleanTarget}. Ensure Administrator/root access.`);
+      setStatusMsg(`Probe unavailable for ${probeTarget}. Ensure Administrator/root access.`);
     }
   };
 
@@ -100,6 +109,30 @@ function App() {
     }
     setIsProcessing(false);
     loadAuditTrail();
+  };
+
+  const handleClone = async () => {
+    setIsProcessing(true);
+    setStatusMsg(`Creating forensic bit-stream clone of ${target}...`);
+    try {
+      const res = await invoke<{image_path: string, sha256_hash: string, bytes_copied: number}>("run_forensic_clone", {
+        target,
+        outputDir: "recovered"
+      });
+      setStatusMsg(`Image created! SHA-256: ${res.sha256_hash}`);
+      loadAuditTrail();
+    } catch (e) {
+      setStatusMsg(`Clone Error: ${e}`);
+    }
+    setIsProcessing(false);
+  };
+
+  const handleOpenFolder = async () => {
+    try {
+      await invoke("open_folder", { path: "recovered" });
+    } catch (e) {
+      setStatusMsg(`Error opening folder: ${e}`);
+    }
   };
 
   const handleDriveWipe = async () => {
@@ -185,10 +218,15 @@ function App() {
             <div className="flex flex-col gap-2 mb-2">
               <select 
                 onChange={(e) => probeDrive(e.target.value)}
+                value={target || ""}
                 className="w-full bg-[#0d1117] border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-cyan-500 outline-none"
               >
-                <option value="" disabled selected>-- Select an attached drive --</option>
-                {availableDrives.map((d, i) => <option key={i} value={d}>{d}</option>)}
+                <option value="" disabled>-- Select an attached drive --</option>
+                {availableDrives.map((d, i) => (
+                  <option key={i} value={d.path}>
+                    {d.label} {d.is_system_drive ? " [SYSTEM DRIVE - DO NOT WIPE]" : ""}
+                  </option>
+                ))}
               </select>
               <div className="flex gap-2">
                 <input 
@@ -252,6 +290,13 @@ function App() {
               Execute Carver (4MB Sliding)
             </button>
             <button 
+              onClick={handleClone}
+              disabled={isProcessing}
+              className="col-span-2 bg-gradient-to-r from-purple-900 to-indigo-900 hover:from-purple-800 hover:to-indigo-800 border border-purple-800 disabled:opacity-50 text-purple-100 py-2 rounded text-sm uppercase tracking-widest font-bold transition-all"
+            >
+              Create Forensic Image (.DD)
+            </button>
+            <button 
               onClick={handleDriveWipe}
               disabled={isProcessing}
               className="bg-red-900/50 hover:bg-red-800/80 border border-red-800 disabled:opacity-50 text-red-200 py-2 rounded text-xs uppercase tracking-widest transition-all"
@@ -266,6 +311,13 @@ function App() {
               Shred File
             </button>
           </div>
+
+          <button 
+            onClick={handleOpenFolder}
+            className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 py-2 rounded text-xs uppercase tracking-widest transition-all mb-4"
+          >
+            Open Evidence Folder
+          </button>
 
           {isProcessing && (
             <div className="mt-4 w-full bg-gray-900 rounded-full h-1.5 overflow-hidden">

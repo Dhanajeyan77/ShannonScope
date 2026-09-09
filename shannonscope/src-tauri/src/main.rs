@@ -144,43 +144,163 @@ fn run_export_report(artifacts: Vec<CarvedArtifact>, out_path: String) -> Result
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct DriveEnumInfo {
+    pub path: String,
+    pub size_gb: f64,
+    pub is_removable: bool,
+    pub is_system_drive: bool,
+    pub label: String,
+}
+
 #[tauri::command]
-fn run_list_drives() -> Vec<String> {
-    use sysinfo::Disks;
+fn enumerate_drives() -> Vec<DriveEnumInfo> {
     let mut drives = Vec::new();
     
-    // Add logical partitions using sysinfo
+    // Add logical partitions using sysinfo to detect system drive easily
+    use sysinfo::Disks;
     let disks = Disks::new_with_refreshed_list();
     for disk in disks.list() {
         if let Some(path) = disk.mount_point().to_str() {
-            // For windows it's "C:\", for Linux it's "/mnt/..."
-            let name = format!("{} ({} GB)", path, disk.total_space() / 1_000_000_000);
-            drives.push(name);
+            let is_sys = path == "/" || path == "C:\\";
+            let size = disk.total_space() as f64 / 1_000_000_000.0;
+            let tag = if disk.is_removable() { "Removable" } else { "Internal" };
+            
+            drives.push(DriveEnumInfo {
+                path: path.to_string(),
+                size_gb: size,
+                is_removable: disk.is_removable(),
+                is_system_drive: is_sys,
+                label: format!("{} - {:.1}GB ({})", path, size, tag),
+            });
         }
     }
 
-    // Add physical raw paths manually for forensic carving
+    // Add physical raw paths manually for bare-metal forensic carving
     #[cfg(target_os = "linux")]
     {
         if let Ok(entries) = std::fs::read_dir("/sys/block/") {
             for entry in entries.filter_map(|e| e.ok()) {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.starts_with("sd") || name.starts_with("nvme") {
-                    drives.push(format!("/dev/{}", name));
+                    let path = format!("/dev/{}", name);
+                    
+                    let mut size_gb = 0.0;
+                    if let Ok(size_str) = std::fs::read_to_string(format!("/sys/block/{}/size", name)) {
+                        if let Ok(sectors) = size_str.trim().parse::<u64>() {
+                            size_gb = (sectors * 512) as f64 / 1_000_000_000.0;
+                        }
+                    }
+
+                    let mut is_removable = false;
+                    if let Ok(rem_str) = std::fs::read_to_string(format!("/sys/block/{}/removable", name)) {
+                        is_removable = rem_str.trim() == "1";
+                    }
+
+                    let tag = if is_removable { "Removable" } else { "Internal/Physical" };
+                    
+                    // Simple heuristic to protect /dev/sda
+                    let is_sys = name.starts_with("sda") || name.starts_with("nvme0n1");
+
+                    drives.push(DriveEnumInfo {
+                        path: path.clone(),
+                        size_gb,
+                        is_removable,
+                        is_system_drive: is_sys,
+                        label: format!("{} - {:.1}GB ({})", path, size_gb, tag),
+                    });
                 }
             }
         }
-        drives.push("tests/test_drive.raw".to_string());
     }
 
     #[cfg(target_os = "windows")]
     {
-        drives.push(r"\\.\PhysicalDrive0".to_string());
-        drives.push(r"\\.\PhysicalDrive1".to_string());
-        drives.push(r"\\.\PhysicalDrive2".to_string());
+        // Mocking Windows physical drives for UI
+        drives.push(DriveEnumInfo {
+            path: r"\\.\PhysicalDrive0".to_string(),
+            size_gb: 512.0,
+            is_removable: false,
+            is_system_drive: true,
+            label: r"\\.\PhysicalDrive0 - 512.0GB (System)".to_string(),
+        });
+        drives.push(DriveEnumInfo {
+            path: r"\\.\PhysicalDrive1".to_string(),
+            size_gb: 32.0,
+            is_removable: true,
+            is_system_drive: false,
+            label: r"\\.\PhysicalDrive1 - 32.0GB (Removable)".to_string(),
+        });
     }
 
+    // Sort to show external/removable drives at the top for forensics
+    drives.sort_by(|a, b| b.is_removable.cmp(&a.is_removable));
     drives
+}
+
+#[tauri::command]
+async fn open_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct CloneResult {
+    pub image_path: String,
+    pub bytes_copied: u64,
+    pub sha256_hash: String,
+}
+
+#[tauri::command]
+async fn run_forensic_clone(target: String, output_dir: String) -> Result<CloneResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::fs::File;
+        use std::io::{Read, Write};
+        use sha2::{Sha256, Digest};
+
+        let _ = std::fs::create_dir_all(&output_dir);
+        let safe_name = target.replace("/", "_").replace("\\", "_");
+        let out_path = format!("{}/forensic_image_{}.dd", output_dir, safe_name);
+
+        let mut source = File::open(&target).map_err(|e| format!("Failed to open target: {e}"))?;
+        let mut dest = File::create(&out_path).map_err(|e| format!("Failed to create image: {e}"))?;
+        
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0u8; 1024 * 1024 * 4]; // 4MB buffer for fast cloning
+        let mut total_bytes = 0;
+
+        // Clone the drive bit-for-bit
+        while let Ok(n) = source.read(&mut buffer) {
+            if n == 0 { break; }
+            dest.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
+            hasher.update(&buffer[..n]);
+            total_bytes += n as u64;
+        }
+
+        let hash_hex = format!("{:x}", hasher.finalize());
+        
+        let mut ledger = AuditLedger::init("logs/audit_chain.json");
+        ledger.append("FORENSIC_CLONE", &target, &format!("Image SHA256: {}", hash_hex), "OPERATOR_ADMIN");
+
+        Ok(CloneResult {
+            image_path: out_path,
+            bytes_copied: total_bytes,
+            sha256_hash: hash_hex,
+        })
+    }).await.map_err(|e| e.to_string())?
 }
 
 fn main() {
@@ -193,7 +313,9 @@ fn main() {
             run_get_drive_info,
             run_hex_view,
             run_export_report,
-            run_list_drives
+            enumerate_drives,
+            open_folder,
+            run_forensic_clone
         ])
         .run(tauri::generate_context!())
         .expect("Error initializing Tauri execution runtime");
