@@ -94,7 +94,7 @@ function App() {
 
   const handleRecover = async () => {
     setIsProcessing(true);
-    setStatusMsg("Scanning sectors with 4MB Sliding Window...");
+    setStatusMsg("Scanning sectors with 64MB Sliding Window...");
     setArtifacts([]);
     setHexViewData(null);
     try {
