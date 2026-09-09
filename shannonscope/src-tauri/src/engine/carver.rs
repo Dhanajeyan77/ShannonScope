@@ -233,9 +233,11 @@ impl CarverEngine {
             }
 
             // Slide window forward with overlap boundary protection
-            if bytes_read == CHUNK_SIZE {
-                current_disk_offset += (CHUNK_SIZE - OVERLAP_SIZE) as u64;
+            if bytes_read > OVERLAP_SIZE {
+                // Advance by bytes_read minus the overlap to catch split signatures
+                current_disk_offset += (bytes_read - OVERLAP_SIZE) as u64;
             } else {
+                // If we read less than the overlap (end of disk), we are done.
                 break;
             }
         }
