@@ -226,7 +226,9 @@ impl CarverEngine {
                         threat_tags: threats,
                     });
                     artifact_counter += 1;
-                    i = end;
+                    
+                    // CRITICAL FIX: Prevent infinite loop if reported_size is 0
+                    i = std::cmp::max(i + 8, end);
                     continue;
                 }
                 i += 1;
