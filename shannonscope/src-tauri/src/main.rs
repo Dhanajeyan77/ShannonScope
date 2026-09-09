@@ -179,6 +179,20 @@ fn enumerate_drives() -> Vec<DriveEnumInfo> {
     // Add physical raw paths manually for bare-metal forensic carving
     #[cfg(target_os = "linux")]
     {
+        // Detect actual system drive path by checking where "/" is mounted
+        let mut sys_device = String::new();
+        for disk in disks.list() {
+            if let Some(path) = disk.mount_point().to_str() {
+                if path == "/" {
+                    if let Some(dev) = disk.name().to_str() {
+                        // e.g. /dev/nvme0n1p2 -> nvme0n1
+                        let clean_dev = dev.replace("/dev/", "").chars().take_while(|c| !c.is_numeric() || dev.contains("nvme")).collect::<String>();
+                        sys_device = clean_dev;
+                    }
+                }
+            }
+        }
+
         if let Ok(entries) = std::fs::read_dir("/sys/block/") {
             for entry in entries.filter_map(|e| e.ok()) {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -199,8 +213,8 @@ fn enumerate_drives() -> Vec<DriveEnumInfo> {
 
                     let tag = if is_removable { "Removable" } else { "Internal/Physical" };
                     
-                    // Simple heuristic to protect /dev/sda
-                    let is_sys = name.starts_with("sda") || name.starts_with("nvme0n1");
+                    // True heuristic: check if this block device matches the root mount
+                    let is_sys = (!sys_device.is_empty() && name.starts_with(&sys_device[..2])) || (!is_removable && size_gb > 100.0);
 
                     drives.push(DriveEnumInfo {
                         path: path.clone(),
