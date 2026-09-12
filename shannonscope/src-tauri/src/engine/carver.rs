@@ -10,6 +10,7 @@ pub const CHUNK_SIZE: usize = 64 * 1024 * 1024; // 64MB
 pub const OVERLAP_SIZE: usize = 2 * 1024 * 1024; // 2MB overlap to catch fragmented boundaries Boundary Guard
 
 use crate::engine::types::CarvedArtifact;
+use crate::engine::threat::ThreatEngine;
 
 pub struct CarverEngine;
 
@@ -35,6 +36,7 @@ impl CarverEngine {
         std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
 
         let mut file = File::open(target_path).map_err(|e| e.to_string())?;
+        let threat_engine = ThreatEngine::new();
 
         let mut artifacts = Vec::new();
         let mut buffer = vec![0u8; CHUNK_SIZE];
@@ -101,7 +103,7 @@ impl CarverEngine {
                             is_fragmented_candidate: false,
                             confidence_score: 0.99,
                             regex_strings: vec![],
-                            threat_tags: vec![],
+                            threat_tags: threat_engine.scan_payload(&payload),
                         });
                         artifact_counter += 1;
                         cursor += total_riff_len as usize;
@@ -131,7 +133,7 @@ impl CarverEngine {
                         let hash = Self::persist_artifact(&out_name, payload)?;
 
                         let payload_entropy = Self::calculate_entropy(payload);
-                        let mut threats = vec![];
+                        let mut threats = threat_engine.scan_payload(&payload);
                         if payload_entropy > 7.98 {
                             threats.push("STEGANOGRAPHY_DETECTED".to_string());
                         }
@@ -197,7 +199,7 @@ impl CarverEngine {
                     let hash = Self::persist_artifact(&out_name, payload).unwrap_or_else(|_| "HASH_ERROR".to_string());
 
                     let payload_entropy = Self::calculate_entropy(payload);
-                    let mut threats = vec![];
+                    let mut threats = threat_engine.scan_payload(&payload);
                     if payload_entropy > 7.95 {
                         threats.push("STEGANOGRAPHY_DETECTED".to_string());
                     }
@@ -215,6 +217,79 @@ impl CarverEngine {
                     });
                     artifact_counter += 1;
                     i = std::cmp::max(i + 5, end);
+                    continue;
+                }
+                i += 1;
+            }
+
+            // 5. Parse SQLite Databases (WhatsApp, Browser History, SMS)
+            let mut i = 0;
+            while i + 16 <= slice.len() {
+                if &slice[i..i+16] == b"SQLite format 3\0" {
+                    let absolute_start = current_disk_offset + i as u64;
+                    // SQLite doesn't have a reliable footer, carve a 5MB fragment
+                    let end = (i + 5 * 1024 * 1024).min(slice.len());
+                    let payload = &slice[i..end];
+                    
+                    let out_name = format!("{}/carved_db_{}.sqlite", output_dir, artifact_counter);
+                    let hash = Self::persist_artifact(&out_name, payload).unwrap_or_else(|_| "HASH_ERROR".to_string());
+                    
+                    let threats = threat_engine.scan_payload(&payload);
+
+                    artifacts.push(CarvedArtifact {
+                        file_type: "SQLite Database".to_string(),
+                        start_offset: absolute_start,
+                        size_bytes: (end - i) as u64,
+                        output_path: out_name,
+                        sha256_checksum: hash,
+                        is_fragmented_candidate: true, // Fixed chunk carve
+                        confidence_score: 0.99,
+                        regex_strings: vec![],
+                        threat_tags: threats,
+                    });
+                    artifact_counter += 1;
+                    i = end;
+                    continue;
+                }
+                i += 1;
+            }
+
+            // 6. Parse ZIP Archives (Encrypted Containers, Documents)
+            let mut i = 0;
+            while i + 4 <= slice.len() {
+                if &slice[i..i+4] == b"PK\x03\x04" {
+                    let absolute_start = current_disk_offset + i as u64;
+                    // Find Central Directory End marker PK\x05\x06
+                    let mut eof_index = None;
+                    for j in (i + 4)..(slice.len() - 22) {
+                        if &slice[j..j+4] == b"PK\x05\x06" {
+                            // The EOCD record is at least 22 bytes long
+                            eof_index = Some(j + 22);
+                            break;
+                        }
+                    }
+
+                    let end = eof_index.unwrap_or_else(|| (i + 10 * 1024 * 1024).min(slice.len()));
+                    let payload = &slice[i..end];
+                    
+                    let out_name = format!("{}/carved_archive_{}.zip", output_dir, artifact_counter);
+                    let hash = Self::persist_artifact(&out_name, payload).unwrap_or_else(|_| "HASH_ERROR".to_string());
+                    
+                    let threats = threat_engine.scan_payload(&payload);
+
+                    artifacts.push(CarvedArtifact {
+                        file_type: "ZIP Archive".to_string(),
+                        start_offset: absolute_start,
+                        size_bytes: (end - i) as u64,
+                        output_path: out_name,
+                        sha256_checksum: hash,
+                        is_fragmented_candidate: eof_index.is_none(),
+                        confidence_score: if eof_index.is_some() { 0.98 } else { 0.60 },
+                        regex_strings: vec![],
+                        threat_tags: threats,
+                    });
+                    artifact_counter += 1;
+                    i = end;
                     continue;
                 }
                 i += 1;
@@ -270,7 +345,7 @@ impl CarverEngine {
                     // We compute a basic entropy check on the first few MB for speed
                     let end_check = (i + mp4_size.min(1024 * 1024)).min(slice.len());
                     let payload_entropy = Self::calculate_entropy(&slice[i..end_check]);
-                    let mut threats = vec![];
+                    let mut threats = threat_engine.scan_payload(&payload);
                     if payload_entropy > 7.97 {
                         threats.push("STEGANOGRAPHY_DETECTED".to_string());
                     }

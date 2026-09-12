@@ -1,0 +1,26 @@
+--- src-tauri/src/main.rs
++++ src-tauri/src/main.rs
+@@ -315,17 +315,18 @@
+ 
+ use crate::engine::sandbox::{SandboxEngine, SandboxResult};
+ 
+ #[tauri::command]
+ fn sandbox_mount(target: String) -> Result<SandboxResult, String> {
+     SandboxEngine::safe_mount(&target)
+ }
+ 
+ #[tauri::command]
+-    SandboxEngine::safe_unmount(&target)
++fn sandbox_unmount(target: String) -> Result<SandboxResult, String> {
++    SandboxEngine::safe_unmount(&target)
+ }
+ 
+ use crate::engine::timeline::{TimelineEngine, TimelineEvent};
+ 
+ #[tauri::command]
+-}
++fn generate_timeline(mount_point: String) -> Result<Vec<TimelineEvent>, String> {
++    TimelineEngine::generate_timeline(&mount_point)
++}
+ 
+ fn main() {

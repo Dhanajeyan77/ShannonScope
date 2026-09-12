@@ -313,6 +313,24 @@ async fn run_forensic_clone(target: String, output_dir: String) -> Result<CloneR
     }).await.map_err(|e| e.to_string())?
 }
 
+use crate::engine::sandbox::{SandboxEngine, SandboxResult};
+
+#[tauri::command]
+fn sandbox_mount(target: String) -> Result<SandboxResult, String> {
+    SandboxEngine::safe_mount(&target)
+}
+
+#[tauri::command]
+fn sandbox_unmount(target: String) -> Result<SandboxResult, String> {
+    SandboxEngine::safe_unmount(&target)
+}
+
+use crate::engine::timeline::{TimelineEngine, TimelineEvent};
+#[tauri::command]
+fn generate_timeline(mount_point: String) -> Result<Vec<TimelineEvent>, String> {
+    TimelineEngine::generate_timeline(&mount_point)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -325,7 +343,10 @@ fn main() {
             run_export_report,
             enumerate_drives,
             open_folder,
-            run_forensic_clone
+            run_forensic_clone,
+            sandbox_mount,
+            sandbox_unmount,
+            generate_timeline
         ])
         .run(tauri::generate_context!())
         .expect("Error initializing Tauri execution runtime");

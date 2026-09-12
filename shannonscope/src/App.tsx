@@ -42,15 +42,60 @@ type DriveEnumInfo = {
   label: string;
 };
 
+type TimelineEvent = {
+  file_path: string;
+  timestamp: number;
+  event_type: string;
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [target, setTarget] = useState("");
   const [availableDrives, setAvailableDrives] = useState<DriveEnumInfo[]>([]);
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [fileTarget, setFileTarget] = useState("");
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+
+  const handleGenerateTimeline = async () => {
+    if (!target) return;
+    if (!isSandboxed) {
+      setStatusMsg("Drive must be safely sandboxed (mounted) first!");
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const mountPoint = `/mnt/shannon_sandbox_${target.replace("/dev/", "")}`;
+      const events: any = await invoke("generate_timeline", { mountPoint });
+      setTimelineEvents(events);
+      setStatusMsg(`Extracted ${events.length} timeline events!`);
+    } catch (e: any) {
+      setStatusMsg(`Timeline Error: ${e}`);
+    }
+    setIsProcessing(false);
+  };
   const [artifacts, setArtifacts] = useState<CarvedArtifact[]>([]);
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSandboxed, setIsSandboxed] = useState(false);
+  
+  const handleSandboxToggle = async () => {
+    if (!target) return;
+    setIsProcessing(true);
+    try {
+      if (isSandboxed) {
+        const res: any = await invoke("sandbox_unmount", { target });
+        setStatusMsg(res.message);
+        setIsSandboxed(false);
+      } else {
+        const res: any = await invoke("sandbox_mount", { target });
+        setStatusMsg(res.message);
+        setIsSandboxed(true);
+      }
+    } catch (e: any) {
+      setStatusMsg(`Sandbox Error: ${e}`);
+    }
+    setIsProcessing(false);
+  };
   const [wipeProfile, setWipeProfile] = useState("dod_3pass");
   const [statusMsg, setStatusMsg] = useState("");
   const [hexViewData, setHexViewData] = useState<string | null>(null);
@@ -211,6 +256,7 @@ export default function App() {
     const tabs = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'carver', label: 'Silicon Carver', icon: Search },
+      { id: 'timeline', label: 'Timeline Analyzer', icon: Activity },
       { id: 'sanitizer', label: 'Data Sanitization', icon: Skull },
       { id: 'ledger', label: 'Audit Ledger', icon: Database },
     ];
@@ -315,6 +361,13 @@ export default function App() {
           <p className="text-xs text-gray-500 mt-1">Extract orphaned fragments and hidden multimedia payloads</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={handleSandboxToggle} 
+            disabled={isProcessing || !target} 
+            className={`px-4 py-2 rounded shadow-lg text-xs uppercase tracking-widest transition-all flex items-center gap-2 border ${isSandboxed ? 'bg-emerald-900/50 border-emerald-500 text-emerald-300' : 'bg-gray-800/50 border-gray-600 text-gray-300 hover:bg-gray-700/80'}`}
+          >
+            {isSandboxed ? 'Unmount Sandbox' : 'Safe Mount Sandbox'}
+          </button>
           <button onClick={handleForensicClone} disabled={isProcessing || !target} className="bg-blue-900/50 hover:bg-blue-800/80 border border-blue-800 disabled:opacity-50 text-blue-200 px-4 py-2 rounded shadow-lg text-xs uppercase tracking-widest transition-all flex items-center gap-2">
             <Database size={16}/> Forensic Clone (.DD)
           </button>
@@ -380,6 +433,60 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const TimelineView = () => (
+    <div className="p-6 h-full flex flex-col animate-fade-in">
+      <div className="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
+        <div>
+          <h2 className="text-lg uppercase tracking-widest text-indigo-400 font-bold flex items-center gap-2">
+            <Activity size={20} /> Super-Timeline Analyzer
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">Chronological mapping of MAC timestamps</p>
+        </div>
+        <button 
+          onClick={handleGenerateTimeline}
+          disabled={isProcessing || !target}
+          className="bg-indigo-900/50 hover:bg-indigo-800/80 border border-indigo-500 text-indigo-200 px-6 py-2 rounded text-xs uppercase tracking-widest font-bold transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50"
+        >
+          Generate Timeline
+        </button>
+      </div>
+
+      <div className="flex-1 bg-[#161b22] border border-gray-800 rounded-lg p-6 overflow-y-auto shadow-inner">
+        {timelineEvents.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
+            <Activity size={48} className="opacity-20" />
+            <p className="uppercase tracking-widest text-sm text-center">No timeline data.<br/>Mount the drive and click Generate.</p>
+          </div>
+        ) : (
+          <div className="space-y-1 border-l-2 border-indigo-900 ml-4">
+            {timelineEvents.map((event, idx) => (
+              <div key={idx} className="relative pl-6 py-2 hover:bg-gray-800/30 group">
+                <div className={`absolute w-3 h-3 rounded-full -left-[7px] top-3 
+                  ${event.event_type === 'MODIFIED' ? 'bg-orange-500' : 
+                    event.event_type === 'CREATED' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+                </div>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest mr-3
+                      ${event.event_type === 'MODIFIED' ? 'text-orange-400 border-orange-900 bg-orange-900/20' : 
+                        event.event_type === 'CREATED' ? 'text-emerald-400 border-emerald-900 bg-emerald-900/20' : 
+                        'text-blue-400 border-blue-900 bg-blue-900/20'}`}>
+                      {event.event_type}
+                    </span>
+                    <span className="text-gray-300 font-mono text-xs">{event.file_path}</span>
+                  </div>
+                  <span className="text-gray-500 font-mono text-[10px]">
+                    {new Date(event.timestamp * 1000).toLocaleString()}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -504,6 +611,7 @@ export default function App() {
         <div className="flex-1 overflow-y-auto bg-gradient-to-br from-[#050709] to-[#0a0d14] relative">
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'carver' && <CarverView />}
+          {activeTab === 'timeline' && <TimelineView />}
           {activeTab === 'sanitizer' && <SanitizerView />}
           {activeTab === 'ledger' && <LedgerView />}
         </div>
