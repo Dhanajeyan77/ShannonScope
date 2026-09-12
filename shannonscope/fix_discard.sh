@@ -1,3 +1,5 @@
+#!/bin/bash
+cat << 'INNER' > src-tauri/src/engine/sanitizer.rs
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(target_os = "linux")]
@@ -202,3 +204,4 @@ impl SanitizerEngine {
         Ok(true)
     }
 }
+INNER
