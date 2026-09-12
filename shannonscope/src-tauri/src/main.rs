@@ -180,28 +180,37 @@ fn enumerate_drives() -> Vec<DriveEnumInfo> {
             }
         }
 
-        if let Ok(entries) = std::fs::read_dir("/sys/block/") {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/block/") {
             for entry in entries.filter_map(|e| e.ok()) {
                 let name = entry.file_name().to_string_lossy().to_string();
+                // Match disks (sda) and partitions (sda1)
                 if name.starts_with("sd") || name.starts_with("nvme") {
                     let path = format!("/dev/{}", name);
                     
                     let mut size_gb = 0.0;
-                    if let Ok(size_str) = std::fs::read_to_string(format!("/sys/block/{}/size", name)) {
+                    if let Ok(size_str) = std::fs::read_to_string(format!("/sys/class/block/{}/size", name)) {
                         if let Ok(sectors) = size_str.trim().parse::<u64>() {
                             size_gb = (sectors * 512) as f64 / 1_000_000_000.0;
                         }
                     }
 
+                    // A partition might not have a 'removable' flag directly, so check parent if needed, 
+                    // but usually reading it handles it or we default to false.
                     let mut is_removable = false;
-                    if let Ok(rem_str) = std::fs::read_to_string(format!("/sys/block/{}/removable", name)) {
+                    let root_disk = if name.contains("nvme") {
+                        name.split('p').next().unwrap_or(&name).to_string()
+                    } else {
+                        name.trim_end_matches(char::is_numeric).to_string()
+                    };
+                    
+                    if let Ok(rem_str) = std::fs::read_to_string(format!("/sys/block/{}/removable", root_disk)) {
                         is_removable = rem_str.trim() == "1";
                     }
 
                     let tag = if is_removable { "Removable" } else { "Internal/Physical" };
                     
                     // True heuristic: check if this block device matches the root mount
-                    let is_sys = (!sys_device.is_empty() && name.starts_with(&sys_device[..2])) || (!is_removable && size_gb > 100.0);
+                    let is_sys = (!sys_device.is_empty() && root_disk.starts_with(&sys_device[..2])) || (!is_removable && size_gb > 100.0);
 
                     drives.push(DriveEnumInfo {
                         path: path.clone(),

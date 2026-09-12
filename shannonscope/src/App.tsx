@@ -99,7 +99,8 @@ export default function App() {
     setArtifacts([]);
     setHexViewData(null);
     try {
-      const results = await invoke<CarvedArtifact[]>("run_carver", { targetPath: target });
+      // run_file_recovery(target: String, output: String)
+      const results = await invoke<CarvedArtifact[]>("run_file_recovery", { target: target, output: "shannonscope/recovered" });
       setArtifacts(results);
       setStatusMsg(`Carving complete. Extracted ${results.length} evidence artifacts.`);
     } catch (e: any) {
@@ -113,7 +114,8 @@ export default function App() {
     setIsProcessing(true);
     setStatusMsg("Creating Bit-for-Bit Forensic DD Image...");
     try {
-      await invoke("run_forensic_clone", { targetPath: target });
+      // run_forensic_clone(target: String, output_dir: String)
+      await invoke("run_forensic_clone", { target: target, outputDir: "shannonscope/reports" });
       setStatusMsg(`Forensic Clone created successfully!`);
     } catch (e: any) {
       setStatusMsg(`Imaging Error: ${e}`);
@@ -126,7 +128,8 @@ export default function App() {
     setIsProcessing(true);
     setStatusMsg(`Executing sanitization profile: ${wipeProfile}`);
     try {
-      await invoke("run_sanitizer", { targetPath: target, profile: wipeProfile });
+      // run_drive_sanitization(target: String, profile_type: String)
+      await invoke("run_drive_sanitization", { target: target, profileType: wipeProfile });
       setStatusMsg(`Sanitization complete.`);
     } catch (e: any) {
       setStatusMsg(`Sanitizer Error: ${e}`);
@@ -140,7 +143,8 @@ export default function App() {
     setIsProcessing(true);
     setStatusMsg(`Shredding specific target: ${fileTarget}`);
     try {
-      await invoke("run_sanitizer", { targetPath: fileTarget, profile: "dod_3pass" });
+      // run_file_sanitization(target: String, profile_type: String)
+      await invoke("run_file_sanitization", { target: fileTarget, profileType: "dod_3pass" });
       setStatusMsg(`File shredded securely.`);
     } catch (e: any) {
       setStatusMsg(`Shred Error: ${e}`);
@@ -151,7 +155,8 @@ export default function App() {
 
   const handleGeneratePdf = async () => {
     try {
-      await invoke("generate_audit_pdf", { outPath: "shannonscope/reports/audit_certificate.pdf" });
+      // run_export_report(artifacts: Vec<CarvedArtifact>, out_path: String)
+      await invoke("run_export_report", { artifacts: artifacts, outPath: "shannonscope/reports/audit_certificate.pdf" });
       setStatusMsg("PDF Audit Certificate generated in reports/");
     } catch (e: any) {
       setStatusMsg(`PDF Error: ${e}`);
@@ -160,7 +165,8 @@ export default function App() {
 
   const handleHexView = async (path: string) => {
     try {
-      const hex = await invoke<string>("read_file_hex", { path });
+      // run_hex_view(path: String)
+      const hex = await invoke<string>("run_hex_view", { path: path });
       setHexViewData(hex);
     } catch (e: any) {
       setStatusMsg(`Hex View Error: ${e}`);
@@ -169,7 +175,8 @@ export default function App() {
 
   const handleOpenFolder = async () => {
     try {
-      await invoke("open_folder");
+      // open_folder(path: String)
+      await invoke("open_folder", { path: "shannonscope/recovered" });
     } catch (e: any) {
       setStatusMsg(`Failed to open folder: ${e}`);
     }
@@ -237,16 +244,16 @@ export default function App() {
         <div className="bg-[#161b22] border border-gray-800 p-6 rounded-lg shadow-xl">
           <div className="flex items-center gap-3 text-gray-400 mb-4">
             <HardDrive size={24} className="text-blue-500" />
-            <h2 className="uppercase tracking-widest text-sm font-bold text-white">Target Selection</h2>
+            <h2 className="uppercase tracking-widest text-sm font-bold text-gray-200">Target Selection</h2>
           </div>
           <select 
-            className="w-full bg-black border border-gray-700 text-white rounded px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none mb-3"
+            className="w-full bg-[#0d1117] border border-gray-700 text-cyan-100 rounded px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none mb-3"
             value={target}
             onChange={(e) => probeDrive(e.target.value)}
           >
-            <option value="">SELECT TARGET DEVICE</option>
+            <option value="" className="bg-gray-900 text-white">SELECT TARGET DEVICE</option>
             {availableDrives.map((d) => (
-              <option key={d.path} value={d.path}>
+              <option key={d.path} value={d.path} className="bg-gray-900 text-white">
                 {d.path} ({d.size_gb.toFixed(1)} GB) {d.is_removable ? '[USB]' : ''}
               </option>
             ))}
@@ -255,7 +262,7 @@ export default function App() {
             <span className="text-gray-500">Available Drives:</span>
             <span className="text-cyan-400 font-bold">{availableDrives.length}</span>
           </div>
-          <button onClick={() => fetchDrives()} className="w-full mt-4 text-[10px] text-gray-400 hover:text-white uppercase tracking-widest border border-gray-800 hover:border-gray-600 rounded py-1">Refresh Drives</button>
+          <button onClick={() => fetchDrives()} className="w-full mt-4 text-[10px] text-gray-400 hover:text-gray-200 uppercase tracking-widest border border-gray-800 hover:border-gray-600 rounded py-1">Refresh Drives</button>
         </div>
 
         <div className="bg-[#161b22] border border-gray-800 p-6 rounded-lg shadow-xl md:col-span-2">
@@ -395,9 +402,9 @@ export default function App() {
             value={wipeProfile}
             onChange={(e) => setWipeProfile(e.target.value)}
           >
-            <option value="dod_3pass">DoD 5220.22-M (3-Pass Wipe)</option>
-            <option value="gutmann_35pass">Gutmann Method (35-Pass Wipe)</option>
-            <option value="crypto_erase">Hardware Crypto-Erase (BLKDISCARD)</option>
+            <option value="nist_clear" className="bg-gray-900 text-white">NIST SP 800-88 (1-Pass Clear)</option>
+            <option value="dod_3pass" className="bg-gray-900 text-white">DoD 5220.22-M (3-Pass Wipe)</option>
+            <option value="hardware_purge" className="bg-gray-900 text-white">Hardware Crypto-Erase (BLKDISCARD)</option>
           </select>
           <p className="text-[10px] text-gray-500 mt-2 uppercase">Warning: Execution of these protocols results in permanent, mathematically irreversible data destruction.</p>
         </div>
