@@ -43,8 +43,8 @@ impl SanitizerEngine {
         let total_bytes = file.metadata().map_err(|e| e.to_string())?.len();
         
         // In case of block devices, len() is 0. We need to handle this!
+        #[cfg(target_os = "linux")]
         let total_bytes = if total_bytes == 0 {
-            // Find size using ioctl BLKGETSIZE64
             let mut size: u64 = 0;
             let fd = file.as_raw_fd();
             unsafe {
@@ -57,6 +57,9 @@ impl SanitizerEngine {
         } else {
             total_bytes
         };
+
+        #[cfg(not(target_os = "linux"))]
+        let total_bytes = total_bytes;
 
         match profile {
             WipeProfile::HardwarePurge => {
