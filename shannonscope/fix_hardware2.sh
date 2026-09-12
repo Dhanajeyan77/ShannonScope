@@ -1,3 +1,5 @@
+#!/bin/bash
+cat << 'INNER' > src-tauri/src/engine/hardware.rs
 use std::fs::File;
 #[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
@@ -158,3 +160,4 @@ pub fn check_rotational(target: &str) -> bool {
     }
     false
 }
+INNER

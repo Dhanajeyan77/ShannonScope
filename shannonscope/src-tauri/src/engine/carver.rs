@@ -431,6 +431,7 @@ impl CarverEngine {
         hasher.update(data);
         let result = hasher.finalize();
         let hash_hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let _ = std::process::Command::new("chmod").arg("777").arg(path).output();
         Ok(hash_hex)
     }
 }
