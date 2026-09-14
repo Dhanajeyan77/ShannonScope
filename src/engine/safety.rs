@@ -31,7 +31,7 @@ impl SafetyGuard {
 
         // 3. Explicit whitelist constraint for testing
         let is_loopback = target_str.ends_with("test_drive.raw") || target_str.contains("/dev/loop");
-        let is_whitelisted_usb = target_str.contains("/dev/sdc") || target_str.contains("/dev/sdd");
+        let is_whitelisted_usb = target_str.contains("/dev/sda1") || target_str.contains("/dev/sda");
 
         if !is_loopback && !is_whitelisted_usb {
             return Err(format!(

@@ -175,6 +175,72 @@ impl CarverEngine {
                 i += 1;
             }
 
+            // ZIP and DOCX Parsing
+            let mut i = 0;
+            while i + 4 <= slice.len() {
+                if &slice[i..i+4] == b"PK\x03\x04" {
+                    let absolute_start = current_disk_offset + i as u64;
+                    let mut eof_index = None;
+                    for j in (i + 4)..(slice.len() - 22) {
+                        if &slice[j..j+4] == b"PK\x05\x06" {
+                            eof_index = Some(j + 22);
+                            break;
+                        }
+                    }
+                    let end = eof_index.unwrap_or_else(|| (i + 5 * 1024 * 1024).min(slice.len()));
+                    let payload = &slice[i..end];
+                    let out_name = format!("{}/carved_archive_or_doc_{}.zip", output_dir, artifact_counter);
+                    let hash = Self::persist_artifact(&out_name, payload).unwrap_or_else(|_| "HASH_ERROR".to_string());
+
+                    artifacts.push(CarvedArtifact {
+                        file_type: "ZIP / DOCX / XLSX".to_string(),
+                        start_offset: absolute_start,
+                        size_bytes: (end - i) as u64,
+                        output_path: out_name,
+                        sha256_checksum: hash,
+                        is_fragmented_candidate: eof_index.is_none(),
+                    });
+                    artifact_counter += 1;
+                    i = end;
+                    continue;
+                }
+                i += 1;
+            }
+
+            // PNG Parsing
+            let mut i = 0;
+            while i + 8 <= slice.len() {
+                if &slice[i..i+8] == b"\x89PNG\r\n\x1a\n" {
+                    let absolute_start = current_disk_offset + i as u64;
+                    let mut eoi_index = None;
+                    for j in (i + 8)..(slice.len() - 8) {
+                        if &slice[j..j+8] == b"IEND\xaeB\x60\x82" {
+                            eoi_index = Some(j + 8);
+                            break;
+                        }
+                    }
+
+                    if let Some(end) = eoi_index {
+                        let payload = &slice[i..end];
+                        let out_name = format!("{}/carved_image_{}.png", output_dir, artifact_counter);
+                        let hash = Self::persist_artifact(&out_name, payload).unwrap_or_else(|_| "HASH_ERROR".to_string());
+
+                        artifacts.push(CarvedArtifact {
+                            file_type: "PNG Image".to_string(),
+                            start_offset: absolute_start,
+                            size_bytes: (end - i) as u64,
+                            output_path: out_name,
+                            sha256_checksum: hash,
+                            is_fragmented_candidate: false,
+                        });
+                        artifact_counter += 1;
+                        i = end;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+
             // 5. Parse MP4 Video (Basic Header Carve)
             let mut i = 0;
             while i + 8 <= slice.len() {

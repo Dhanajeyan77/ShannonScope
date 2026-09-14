@@ -42,6 +42,7 @@ fn main() {
                         art.file_type, art.start_offset, art.size_bytes, art.sha256_checksum, art.output_path);
                 }
                 let entry = ledger.append("CARVE", target, "SUCCESS", "OPERATOR_ADMIN");
+                let _ = ledger.export_csv("logs/audit_chain.csv");
                 println!("Logged audit entry: {}", entry.record_hash);
             },
             Err(e) => {

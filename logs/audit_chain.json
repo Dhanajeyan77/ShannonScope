@@ -1,0 +1,12 @@
+[
+  {
+    "index": 0,
+    "timestamp": 1789376237,
+    "action": "CARVE",
+    "target": "/dev/sda1",
+    "status": "SUCCESS",
+    "operator_id": "OPERATOR_ADMIN",
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "record_hash": "fbf0db7de14f27013dacab35ce94e0a75580ed52b2f7ff234680c7e12e25d12e"
+  }
+]

@@ -1,0 +1,2 @@
+Index,Timestamp,Action,Target,Status,Operator,RecordHash
+0,1789376237,CARVE,/dev/sda1,SUCCESS,OPERATOR_ADMIN,fbf0db7de14f27013dacab35ce94e0a75580ed52b2f7ff234680c7e12e25d12e

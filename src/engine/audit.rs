@@ -133,4 +133,15 @@ impl AuditLedger {
         doc.save(&mut buf_writer).map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn export_csv(&self, out_path: &str) -> Result<(), String> {
+        let mut file = File::create(out_path).map_err(|e| e.to_string())?;
+        writeln!(file, "Index,Timestamp,Action,Target,Status,Operator,RecordHash").map_err(|e| e.to_string())?;
+        for entry in &self.entries {
+            writeln!(file, "{},{},{},{},{},{},{}", 
+                entry.index, entry.timestamp, entry.action, entry.target, entry.status, entry.operator_id, entry.record_hash
+            ).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
 }
